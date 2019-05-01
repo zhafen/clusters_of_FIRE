@@ -144,20 +144,24 @@ class ClusterPopulation:
         self.ClusterMetallicity = np.repeat(metallicity, self.NumClusters)
 
         self.M_GMC = np.repeat(M_GMC, self.NumClusters)
-        self.ClusterFormationTime = np.repeat(tform, self.NumClusters)
-        self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
-        self.FieldFormationTime = np.array([tform,])
-        self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
-        self.FieldFormationRedshift = np.array([time_to_redshift(tform),])
 
-        
         if snapnum is not None and cloud_id is not None:
+            self.ClusterFormationTime = np.repeat(tform, self.NumClusters)
+            self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
+            self.FieldFormationTime = np.array([tform,])
+            self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
+            self.FieldFormationRedshift = np.array([time_to_redshift(tform),])            
             if np.size(tracers) > 1: # choose from the available galactocentric radii randomly
                 self.ClusterTracers = np.random.choice(tracers, self.NumClusters)
             else:
                 self.ClusterTracers = np.repeat(tracers[0], self.NumClusters)
             self.FieldTracers = [tracers,]                
         else:
+            self.ClusterFormationTime = np.repeat(0, self.NumClusters)
+            self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
+            self.FieldFormationTime = np.array([0,])
+            self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
+            self.FieldFormationRedshift = np.array([0,])            
             self.ClusterTracers = np.repeat(None, self.NumClusters)
             self.FieldTracers = [None,]
             
