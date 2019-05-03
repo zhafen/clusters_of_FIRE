@@ -9,7 +9,7 @@ sigma_CFE_z = [330, 410] # 1% solar metallicity and solar metallicity values for
 alpha_M_z = [-1.9, -1.6] # 1% solar metallicity and solar metallicity values for mass function slope from a given cloud
 k_M_z = [0.13,0.09] # turnover parameter for cloud-level mass function 
 sigma_SFE = 3200. 
-SFEmax = 0.55
+SFEmax = 0.68
 CFEmax = 1
 mass_unit_msun = 1e10
 length_unit_pc = 1e3
@@ -69,13 +69,13 @@ def SampleMassFunc(mass_budget, mmin, metallicity,  seed=42):
 def SampleSizeFunc(masses, M_GMC, R_GMC, metallicity, seed=42):
     np.random.seed(seed)
 #    Rmin = (masses / 1e6 / np.pi)**0.5
-    return 3 * (R_GMC/1e6)**.2 * (masses/1e4)**(1./3) * (M_GMC / (np.pi*R_GMC**2))**-1. * metallicity**.1 * 10**(np.random.normal(size=masses.shape)*0.38)
+    return 3 * (M_GMC/1e6)**(1./5) * (masses/1e4)**(1./3) * (M_GMC / (np.pi*R_GMC**2)/100)**-1. * metallicity**.1 * 10**(np.random.normal(size=masses.shape)*0.38)
 
 def SampleEFFGamma(N=1, seed=42):
     np.random.seed(seed)
     x = np.random.rand(N)
-    X = np.linspace(0,8,1000)
-    return np.interp(x, (X/(1.2+X))**0.54, X) + 2  # fit to the distribution of EFF slope parameters from Grudic 2017
+    X = np.logspace(-2,2,1000)
+    return np.interp(x, (X/(1.2+X))**0.54 * 1.064, X) + 2  # fit to the distribution of EFF slope parameters from Grudic 2017
 
 
 class ClusterPopulation:
@@ -112,8 +112,10 @@ class ClusterPopulation:
         self.Sigma_GMC = M_GMC/(np.pi*R_GMC**2)
         n_CFE = np.interp(np.log10(metallicity), [-2,0], n_CFE_z)
         sigma_CFE = np.interp(np.log10(metallicity), [-2,0], sigma_CFE_z)
+#        print(sigma_CFE, n_CFE, sigma_SFE, n_SFE)
         # The following three lines model the scalings obtained in the Grudic et al. 2019 GMC simulations
-        self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC)**n_SFE)**-1.   # star formation efficiency
+        delta = np.random.normal()*0.25
+        self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC/np.exp(delta))**n_SFE)**-1.   # star formation efficiency
         # model variance in CFE with a logarithmic variance in the effective surface density
         delta = np.random.normal()*0.6
         self.CFE = (1./CFEmax + (sigma_CFE/self.Sigma_GMC/np.exp(delta))**n_CFE)**-1 # fraction of stars in bound clusters
@@ -124,7 +126,7 @@ class ClusterPopulation:
 #        Mmax = min(self.Mbound, Mmax)  # can't have a cluster more massive than the total bound mass
         if (self.Mbound > Mmin):
             self.ClusterMasses = SampleMassFunc(self.Mbound, Mmin, metallicity, seed = seed) # masses of the star clusters
-            self.Mbound = self.ClusterMasses.sum()
+#            self.Mbound = self.ClusterMasses.sum()
         else:
             self.ClusterMasses = np.array([])
             self.Mbound = 0.
