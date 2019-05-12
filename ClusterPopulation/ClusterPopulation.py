@@ -9,7 +9,7 @@ sigma_CFE_z = [330, 410] # 1% solar metallicity and solar metallicity values for
 alpha_M_z = [-1.9, -1.6] # 1% solar metallicity and solar metallicity values for mass function slope from a given cloud
 k_M_z = [0.13,0.09] # turnover parameter for cloud-level mass function 
 sigma_SFE = 3200. 
-SFEmax = 0.68
+SFEmax = 0.8
 CFEmax = 1
 mass_unit_msun = 1e10
 length_unit_pc = 1e3
@@ -31,7 +31,7 @@ def MassCDF(m, mtot, alpha, k):
 
 @jit
 def SampleMassFunc(mass_budget, mmin, metallicity,  seed=42):
-    """Returns a stochastically-sampled list of masses from a ~M^-2 mass function that goes between mmin and mmax"""
+    """Returns a stochastically-sampled list of masses from the special cloud-level mass function described in Grudic et al 2019"""
     np.random.seed(seed)
     masses = []
     mtot = 0.
@@ -80,7 +80,7 @@ def SampleEFFGamma(N=1, seed=42):
 
 class ClusterPopulation:
     """Class that implements the Grudic et al 2019 model for the cluster population properties from a single GMC/OB association, given bulk cloud properties."""
-    def __init__(self, snapnum=None, cloud_id=None, cloud_data=None, M_GMC=None, R_GMC=None, tform=None, metallicity=None, tracers=None, seed_offset=0, corrdata=None):
+    def __init__(self, snapnum=None, cloud_id=None, cloud_data=None, M_GMC=None, R_GMC=None, tform=None, metallicity=None, tracers=None, seed_offset=0, corrdata=None, feedback_factor=1, delta_factor = 1):
 #        np.random.seed(snapnum)
         if cloud_data is not None:
             m = np.array(cloud_data["PartType0"]["Masses"])
@@ -114,11 +114,11 @@ class ClusterPopulation:
         sigma_CFE = np.interp(np.log10(metallicity), [-2,0], sigma_CFE_z)
 #        print(sigma_CFE, n_CFE, sigma_SFE, n_SFE)
         # The following three lines model the scalings obtained in the Grudic et al. 2019 GMC simulations
-        delta = np.random.normal()*0.25
-        self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC/np.exp(delta))**n_SFE)**-1.   # star formation efficiency
+        delta = np.random.normal()*0.25 * delta_factor
+        self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC/np.exp(delta) *feedback_factor)**n_SFE)**-1.   # star formation efficiency
         # model variance in CFE with a logarithmic variance in the effective surface density
-        delta = np.random.normal()*0.6
-        self.CFE = (1./CFEmax + (sigma_CFE/self.Sigma_GMC/np.exp(delta))**n_CFE)**-1 # fraction of stars in bound clusters
+        delta = np.random.normal()*0.6 * delta_factor
+        self.CFE = (1./CFEmax + (sigma_CFE/self.Sigma_GMC/np.exp(delta) * feedback_factor)**n_CFE)**-1 # fraction of stars in bound clusters
         self.Mstar = self.SFE * M_GMC * mass_correction_fac   # total stellar mass
 #        Mmax = self.Mstar / mass_correction_fac * (1 + (sigma_Mmax/self.Sigma_GMC)**alpha_Mmax)**-1. # maximum cluster mass
 
