@@ -1,5 +1,6 @@
 import numpy as np
 from numba import jit, njit
+import matplotlib.pyplot as plt
 
 # Model parameters, calibrated from Grudic et al 2019 simulation suite
 Mmin = 100.
@@ -26,7 +27,7 @@ def snapnum_to_time(num):
 
 @njit
 def MassCDF(m, mtot, alpha, k):
-    if m==mtot: return 0
+#    if m==mtot: return 0
     return m**(alpha + 1) * np.exp(-k / (1 - m/mtot))
 
 @jit
@@ -40,25 +41,39 @@ def SampleMassFunc(mass_budget, mmin, metallicity,  seed=42):
     k = np.interp(np.log10(metallicity), [-2,0], k_M_z)
 
     Nmax = MassCDF(mmin/mass_budget, 1, alpha, k) # mmin**(alpha + 1) * np.exp(k/(1 - mmin/mass_budget))
+    mgrid = np.logspace(np.log10(mmin/mass_budget), -1e-7, 1000)
+    Nm = MassCDF(mgrid, 1, alpha, k)
+    Nm[-1] = 0.
+    Nm = Nm.max() - Nm
  #   print(alpha, k, Nmax)
     # do bisection method on the CDF (slow but safe)
+#    plt.loglog(mgrid, Nm,  mgrid, np.ones_like(Nm)*np.random.rand() * Nmax)
+#    plt.show()
     while mtot < 1: #mass_budget:
-        x = np.random.rand() * Nmax
-        a, b = mmin/mass_budget, 1
-        m = (a+b)/2
-        f = Nmax #MassCDF(m, mtot, alpha, k)
-        while np.abs(f - x) > 1e-2:
-            fa = MassCDF(a, 1, alpha, k)
-            fb = MassCDF(b, 1, alpha, k)
-            f = MassCDF((a+b)/2, 1, alpha, k)
-#            print(a,b, f)
-            if (f-x)*(fa-x) < 0: # root is between a and (a+b)/2
-                b, m = m, (m + a)/2
-            else: # root is between (a+b)/2 and b
-                a, m = m, (m + b)/2
-        mtot += m 
+        x = np.random.rand(100) * Nmax
+        m = np.interp(x, Nm, mgrid)
+#        print(x, m, Nmax)
+#         a, b = mmin/mass_budget, 1
+#         m = (a+b)/2
+#         f = Nmax #MassCDF(m, mtot, alpha, k)
+#         while np.abs(f - x) > 1e-2:
+#             fa = MassCDF(a, 1, alpha, k)
+#             fb = MassCDF(b, 1, alpha, k)
+#             f = MassCDF((a+b)/2, 1, alpha, k)
+# #            print(a,b, f)
+#             if (f-x)*(fa-x) < 0: # root is between a and (a+b)/2
+#                 b, m = m, (m + a)/2
+#             else: # root is between (a+b)/2 and b
+#                 a, m = m, (m + b)/2
+#        mtot += m
+        mtot += m.sum()
         masses.append(m)
-
+        
+    masses = np.concatenate(masses)
+    idx = np.arange(len(masses))[masses.cumsum() > 1][0]
+#    print(idx)
+    mtot = masses[:idx+1].sum()
+    masses = masses[:idx+1]
     mtot *= mass_budget
     masses = np.array(masses) * mass_budget
     mass_error = mtot - mass_budget
@@ -68,7 +83,6 @@ def SampleMassFunc(mass_budget, mmin, metallicity,  seed=42):
 
 def SampleSizeFunc(masses, M_GMC, R_GMC, metallicity, seed=42):
     np.random.seed(seed)
-#    Rmin = (masses / 1e6 / np.pi)**0.5
     return 3 * (M_GMC/1e6)**(1./5) * (masses/1e4)**(1./3) * (M_GMC / (np.pi*R_GMC**2)/100)**-1. * metallicity**.1 * 10**(np.random.normal(size=masses.shape)*0.38)
 
 def SampleEFFGamma(N=1, seed=42):
@@ -82,16 +96,15 @@ class ClusterPopulation:
     """Class that implements the Grudic et al 2019 model for the cluster population properties from a single GMC/OB association, given bulk cloud properties."""
     def __init__(self, snapnum=None, cloud_id=None, cloud_data=None, M_GMC=None, R_GMC=None, tform=None, metallicity=None, tracers=None, seed_offset=0, corrdata=None, feedback_factor=1, delta_factor = 1):
 #        np.random.seed(snapnum)
-        if cloud_data is not None:
+        if cloud_data is not None and (M_GMC is None or R_GMC is None or metallicity is None or tracers is None):
+#            print("Computing bulk properties...")
             m = np.array(cloud_data["PartType0"]["Masses"])
             x = np.array(cloud_data["PartType0"]["Coordinates"])
             z = np.array(cloud_data["PartType0"]["Metallicity"][:,0])
             com = np.average(x, axis=0, weights=m)
-            r = np.sqrt(np.sum((x-com)*(x-com),axis=1))
+            r = np.sqrt(np.sum((x-com)*(x-com),axis=1))#
             M_GMC = mass_unit_msun * m.sum()
-#            self.M_GMC = np.array([M_GMC,])
             R_GMC = np.sqrt(np.average(r**2, weights=m) * 5/3) * length_unit_pc
-#            self.R_GMC = np.array([R_GMC,])
             metallicity = np.average(z, weights=m)
             tracers = np.array(cloud_data["Tracers"])
             
@@ -101,76 +114,83 @@ class ClusterPopulation:
             
         if snapnum is not None and cloud_id is not None:
             seed = snapnum*1000 + int(cloud_id.replace("Cloud","")) + seed_offset
-            corrdata = np.loadtxt(corrdata)
-            corrdict = dict(zip(corrdata[:,0], corrdata[:,1]))
-            mass_correction_fac = corrdict[snapnum]
+#            corrdata = np.loadtxt(corrdata)
+#            corrdict = dict(zip(corrdata[:,0], corrdata[:,1]))
+            mass_correction_fac = 1. #corrdict[snapnum]
         else:
             seed = seed_offset
             mass_correction_fac = 1.
             
         np.random.seed(seed)
-        self.Sigma_GMC = M_GMC/(np.pi*R_GMC**2)
-        n_CFE = np.interp(np.log10(metallicity), [-2,0], n_CFE_z)
-        sigma_CFE = np.interp(np.log10(metallicity), [-2,0], sigma_CFE_z)
+
+        if M_GMC is not None and R_GMC is not None:
+            self.Sigma_GMC = M_GMC/(np.pi*R_GMC**2)
+            n_CFE = np.interp(np.log10(metallicity/0.02), [-2,0], n_CFE_z)
+            sigma_CFE = np.interp(np.log10(metallicity/0.02), [-2,0], sigma_CFE_z)
 #        print(sigma_CFE, n_CFE, sigma_SFE, n_SFE)
         # The following three lines model the scalings obtained in the Grudic et al. 2019 GMC simulations
-        delta = np.random.normal()*0.25 * delta_factor
-        self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC/np.exp(delta) *feedback_factor)**n_SFE)**-1.   # star formation efficiency
+            delta = np.random.normal()*0.0 * delta_factor
+            self.SFE = (1./SFEmax + (sigma_SFE/self.Sigma_GMC/np.exp(delta) *feedback_factor)**n_SFE)**-1.   # star formation efficiency
         # model variance in CFE with a logarithmic variance in the effective surface density
-        delta = np.random.normal()*0.6 * delta_factor
-        self.CFE = (1./CFEmax + (sigma_CFE/self.Sigma_GMC/np.exp(delta) * feedback_factor)**n_CFE)**-1 # fraction of stars in bound clusters
-        self.Mstar = self.SFE * M_GMC * mass_correction_fac   # total stellar mass
+            delta = np.random.normal()*0.6 * delta_factor
+            self.CFE = (1./CFEmax + (sigma_CFE/self.Sigma_GMC/np.exp(delta) * feedback_factor)**n_CFE)**-1 # fraction of stars in bound clusters
+            self.Mstar = self.SFE * M_GMC * mass_correction_fac   # total stellar mass
 #        Mmax = self.Mstar / mass_correction_fac * (1 + (sigma_Mmax/self.Sigma_GMC)**alpha_Mmax)**-1. # maximum cluster mass
 
-        self.Mbound = self.CFE * self.Mstar
+            self.Mbound = self.CFE * self.Mstar
 #        Mmax = min(self.Mbound, Mmax)  # can't have a cluster more massive than the total bound mass
-        if (self.Mbound > Mmin):
-            self.ClusterMasses = SampleMassFunc(self.Mbound, Mmin, metallicity, seed = seed) # masses of the star clusters
-#            self.Mbound = self.ClusterMasses.sum()
-        else:
-            self.ClusterMasses = np.array([])
-            self.Mbound = 0.
+            if (self.Mbound > Mmin*1.1):
+                self.ClusterMasses = SampleMassFunc(self.Mbound, Mmin, metallicity, seed = seed) # masses of the star clusters
+                if np.any(self.ClusterMasses == np.inf):
+                    print(cloud_id, snapnum, M_GMC, R_GMC, self.Mbound, self.Mstar, seed_offset)
+#            print(self.ClusterMasses)
+                self.Mbound = self.ClusterMasses.sum()
+                self.FieldMass = np.array([self.Mstar - self.Mbound,])
+                self.FieldMetallicity = np.array([metallicity,])                
+            else:
+                self.ClusterMasses = np.array([])
+                self.Mbound = 0.
             self.FieldMass = np.array([self.Mstar - self.Mbound,])
             self.FieldMetallicity = np.array([metallicity,])                
             
-        self.NumClusters = len(self.ClusterMasses)
-        if snapnum is not None and cloud_id is not None:
-            self.ClusterIDs = ["%d.%s.%d"%(snapnum, cloud_id.replace("Cloud",""), i) for i in range(self.NumClusters)]
-        else:
-            self.ClusterIDs = np.arange(len(self.ClusterMasses))
-        self.ClusterMetallicity = np.repeat(metallicity, self.NumClusters)
-        self.R_GMC = np.repeat(R_GMC, self.NumClusters)
-        self.ClusterRadii = SampleSizeFunc(self.ClusterMasses, M_GMC, self.R_GMC, self.ClusterMetallicity, seed = seed + 1)   # 3D half-mass radii of the clusters
-        self.EFF_Gamma = SampleEFFGamma(self.NumClusters, seed = seed + 2)  # EFF slope parameter gamma
-
-        self.ClusterMetallicity = np.repeat(metallicity, self.NumClusters)
-
-        self.M_GMC = np.repeat(M_GMC, self.NumClusters)
-
-        if snapnum is not None and cloud_id is not None:
-            self.ClusterFormationTime = np.repeat(tform, self.NumClusters)
-            self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
-            self.FieldFormationTime = np.array([tform,])
-            self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
-            self.FieldFormationRedshift = np.array([time_to_redshift(tform),])            
-            if np.size(tracers) > 1: # choose from the available galactocentric radii randomly
-                self.ClusterTracers = np.random.choice(tracers, self.NumClusters)
+            self.NumClusters = len(self.ClusterMasses)
+            if snapnum is not None and cloud_id is not None:
+                self.ClusterIDs = ["%d.%s.%d"%(snapnum, cloud_id.replace("Cloud",""), i) for i in range(self.NumClusters)]
             else:
-                self.ClusterTracers = np.repeat(tracers[0], self.NumClusters)
-            self.FieldTracers = [tracers,]                
-        else:
-            self.ClusterFormationTime = np.repeat(0, self.NumClusters)
-            self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
-            self.FieldFormationTime = np.array([0,])
-            self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
-            self.FieldFormationRedshift = np.array([0,])            
-            self.ClusterTracers = np.repeat(None, self.NumClusters)
-            self.FieldTracers = [None,]
+                self.ClusterIDs = np.arange(len(self.ClusterMasses))
+            self.ClusterMetallicity = np.repeat(metallicity, self.NumClusters)
+            self.R_GMC = np.repeat(R_GMC, self.NumClusters)
+            self.ClusterRadii = SampleSizeFunc(self.ClusterMasses, M_GMC, self.R_GMC, self.ClusterMetallicity, seed = seed + 1)   # 3D half-mass radii of the clusters
+            self.EFF_Gamma = SampleEFFGamma(self.NumClusters, seed = seed + 2)  # EFF slope parameter gamma
+
+            self.ClusterMetallicity = np.repeat(metallicity, self.NumClusters)
+
+            self.M_GMC = np.repeat(M_GMC, self.NumClusters)
+
+            if snapnum is not None and cloud_id is not None:
+                self.ClusterFormationTime = np.repeat(tform, self.NumClusters)
+                self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
+                self.FieldFormationTime = np.array([tform,])
+                self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
+                self.FieldFormationRedshift = np.array([time_to_redshift(tform),])            
+                if np.size(tracers) > 1: # choose from the available galactocentric radii randomly
+                    self.ClusterTracers = np.random.choice(tracers, self.NumClusters)
+                else:
+                    self.ClusterTracers = np.repeat(tracers[0], self.NumClusters)
+                self.FieldTracers = [tracers,]                
+            else:
+                self.ClusterFormationTime = np.repeat(0, self.NumClusters)
+                self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
+                self.FieldFormationTime = np.array([0,])
+                self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
+                self.FieldFormationRedshift = np.array([0,])            
+                self.ClusterTracers = np.repeat(None, self.NumClusters)
+                self.FieldTracers = [None,]
             
         
     def __add__(self, pop2):
         if pop2 == 0: return self
-        result = ClusterPopulation()
+        result = ClusterPopulation() # create an empty population
         result.ClusterMasses = np.concatenate([self.ClusterMasses, pop2.ClusterMasses])
         result.ClusterRadii = np.concatenate([self.ClusterRadii, pop2.ClusterRadii])
         result.M_GMC = np.concatenate([self.M_GMC, pop2.M_GMC])
