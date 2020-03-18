@@ -106,7 +106,8 @@ class ClusterPopulation:
             M_GMC = mass_unit_msun * m.sum()
             R_GMC = np.sqrt(np.average(r**2, weights=m) * 5/3) * length_unit_pc
             metallicity = np.average(z, weights=m)
-            tracers = np.array(cloud_data["Tracers"])
+            if "Tracers" in cloud_data.keys():
+                tracers = np.array(cloud_data["Tracers"])
             
         if tform is None and snapnum is not None:
             tform = snapnum_to_time(snapnum)
@@ -172,12 +173,16 @@ class ClusterPopulation:
                 self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
                 self.FieldFormationTime = np.array([tform,])
                 self.ClusterFormationRedshift = np.repeat(time_to_redshift(tform), self.NumClusters)
-                self.FieldFormationRedshift = np.array([time_to_redshift(tform),])            
-                if np.size(tracers) > 1: # choose from the available galactocentric radii randomly
-                    self.ClusterTracers = np.random.choice(tracers, self.NumClusters)
+                self.FieldFormationRedshift = np.array([time_to_redshift(tform),])
+                if tracers is not None:
+                    if np.size(tracers) > 1: # choose from the available galactocentric radii randomly
+                        self.ClusterTracers = np.random.choice(tracers, self.NumClusters)
+                    else:
+                        self.ClusterTracers = np.repeat(tracers[0], self.NumClusters)
+                    self.FieldTracers = [tracers,]
                 else:
-                    self.ClusterTracers = np.repeat(tracers[0], self.NumClusters)
-                self.FieldTracers = [tracers,]                
+                    self.ClusterTracers = np.repeat(None, self.NumClusters)
+                    self.FieldTracers = [None,]
             else:
                 self.ClusterFormationTime = np.repeat(0, self.NumClusters)
                 self.ClusterFormationRedshift = np.repeat(0, self.NumClusters)
