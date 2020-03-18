@@ -1,4 +1,4 @@
-#/usr/bin/env python
+#!/usr/bin/env python
 from sys import argv
 from load_from_snapshot import load_from_snapshot
 from matplotlib import pyplot as plt
