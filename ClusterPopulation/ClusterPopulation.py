@@ -3,7 +3,7 @@ from numba import jit, njit
 import matplotlib.pyplot as plt
 
 # Model parameters, calibrated from Grudic et al 2019 simulation suite
-Mmin = 100.
+Mmin = 1e2
 n_SFE = 1.
 n_CFE_z = [1.4, 2] # 1% solar metallicity and solar metallicity values for index of bound fraction as a function of surface density
 sigma_CFE_z = [330, 410] # 1% solar metallicity and solar metallicity values for critical surface density for 50% bound fraction
@@ -30,7 +30,7 @@ def MassCDF(m, mtot, alpha, k):
 #    if m==mtot: return 0
     return m**(alpha + 1) * np.exp(-k / (1 - m/mtot))
 
-@jit
+@jit(forceobj=True)
 def SampleMassFunc(mass_budget, mmin, metallicity,  seed=42):
     """Returns a stochastically-sampled list of masses from the special cloud-level mass function described in Grudic et al 2019"""
     np.random.seed(seed)

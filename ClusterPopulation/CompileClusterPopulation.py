@@ -71,11 +71,13 @@ def ComputeClusterPopulation(f, savetxt=False, overwrite=False):
         data = F[cloud]
         m = 1e10 * np.array(data["PartType0"]["Masses"])
         metallicity = np.average(np.array(data["PartType0"]["Metallicity"])[:,0],weights=m)
-#        tracers = np.array(data["Tracers"])
-#        if (len(data["PartType0"]["Masses"]) >= 10):
-#            print(cloud, len(data["PartType0"]["Masses"]))
+        if "Tracers" in data.keys():
+            tracers = np.array(data["Tracers"])
+        else:
+            tracers = None
+
         for j in range(num_resamplings): # we re-sample the cloud according to the correction factor
-            pops.append(ClusterPopulation(cloud_data=data, snapnum=n, cloud_id=cloud, seed_offset = seed+j, M_GMC=M_GMC[cloud], R_GMC=R_GMC[cloud], metallicity=metallicity))#, tracers=tracers))
+            pops.append(ClusterPopulation(cloud_data=data, snapnum=n, cloud_id=cloud, seed_offset = seed+j, M_GMC=M_GMC[cloud], R_GMC=R_GMC[cloud], metallicity=metallicity, tracers=tracers))
 
     pop = sum(pops)
     if pop==0: return
@@ -102,19 +104,11 @@ def ComputeClusterPopulation(f, savetxt=False, overwrite=False):
     for k in outdict.keys():
         Fout.create_dataset(k, data=outdict[k])
     Fout.close()
-#    return sum(pops)
-#print(argv[2:])
-#pops = [getpop(f) for f in argv[2:]]
+
+    
 #[ComputeClusterPopulation(f) for f in argv[2:]]
-Pool(12).map(ComputeClusterPopulation, argv[2:], chunksize=1)
-
-#pops = Parallel(n_jobs=12)(delayed(getpop)(f) for f in argv[2:])
-#exit()
-#gamma = []
-#redshifts = []
-#for p in pops:
-#    gamma.append(p.BoundMass / p.FieldMass)
-
+nproc = 24
+Pool(nproc).map(ComputeClusterPopulation, argv[2:], chunksize=1)
 #pop = sum(pops)
 #print(len(pop.EFF_Gamma), len(pop.ClusterMasses))
 #star_data = np.load("m12i_res7100_ids_coords_rgc.npy")
